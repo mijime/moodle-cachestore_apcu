@@ -62,7 +62,7 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      */
     public static function are_requirements_met() {
         if (!extension_loaded('apc') ||    // APC PHP extension is not available.
-            !ini_get('apc.enabled')        // APC is not enabled.
+            ! ( ini_get('apc.enabled') || ini_get('apcu.enabled') ) // APC is not enabled.
         ) {
             return false;
         }
