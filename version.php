@@ -15,9 +15,9 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * APC cache store version information.
+ * APCu cache store version information.
  *
- * @package    cachestore_apc
+ * @package    cachestore_apcu
  * @copyright  2012 Sam Hemelryk
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -27,4 +27,4 @@ defined('MOODLE_INTERNAL') || die;
 $plugin->version = 2014111400;
 $plugin->requires = 2014111000;
 $plugin->maturity = MATURITY_STABLE;
-$plugin->component = 'cachestore_apc';
+$plugin->component = 'cachestore_apcu';
