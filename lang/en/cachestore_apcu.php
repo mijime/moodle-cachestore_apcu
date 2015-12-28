@@ -15,13 +15,13 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * APC cache store language strings.
+ * APCu cache store language strings.
  *
- * @package    cachestore_apc
+ * @package    cachestore_apcu
  * @copyright  2012 Sam Hemelryk
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-$string['pluginname'] = 'Alternative PHP cache (APC)';
+$string['pluginname'] = 'APC User Cache (APCu)';
 $string['testperformance'] = 'Test performance';
-$string['testperformance_desc'] = 'If enabled APC performance will be included when viewing the Test performance page in the administration block. Enabling this on a production site is not recommended.';
+$string['testperformance_desc'] = 'If enabled APCu performance will be included when viewing the Test performance page in the administration block. Enabling this on a production site is not recommended.';
