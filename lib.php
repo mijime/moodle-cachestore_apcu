@@ -30,7 +30,7 @@
  * @copyright  2012 Sam Hemelryk
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_is_searchable, cache_is_configurable {
+class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_is_searchable, cache_is_lockable {
 
     /**
      * The required version of APCu for this extension.
@@ -55,12 +55,7 @@ class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_i
      */
     protected $prefix = null;
     protected $prefix_length = "";
-
-    /**
-     * The prefix for this instance
-     * @var string
-     */
-    protected $instance_id = "";
+    protected $prefix_lock = null;
 
     /**
      * Static method to check that the APCu stores requirements have been met.
@@ -120,9 +115,6 @@ class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_i
      */
     public function __construct($name, array $configuration = array()) {
         $this->name = $name;
-        if(isset($configuration['instance_id']) && !empty($configuration['instance_id'])) {
-            $this->instance_id = $configuration['instance_id'];
-        }
     }
 
     /**
@@ -143,7 +135,9 @@ class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_i
      */
     public function initialise(cache_definition $definition) {
         $this->definition = $definition;
-        $this->prefix = $this->instance_id.'\\'.$definition->get_mode().'\\'.$definition->get_area().'\\'.$definition->get_component().'\\';
+        $definition_id = $definition->get_mode().'/'.$definition->get_component().'/'.$definition->get_area();
+        $this->prefix = $this->name.'/data/'.$definition_id.'/';
+        $this->prefix_lock = $this->name.'/lock/'.$definition_id.'/';
         $this->prefix_length = strlen($this->prefix);
         return true;
     }
@@ -165,6 +159,10 @@ class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_i
      */
     protected function prepare_key($key) {
         return $this->prefix . $key;
+    }
+
+    protected function prepare_lock($key) {
+        return $this->prefix_lock . $key;
     }
 
     /**
@@ -314,7 +312,7 @@ class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_i
      */
     public function has_any(array $keys) {
         foreach($keys as $key) {
-            if(apcu_exists($this->prepare_key($key)) {
+            if(apcu_exists($this->prepare_key($key))) {
                 return true;
             }
         }
@@ -329,7 +327,7 @@ class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_i
      */
     public function has_all(array $keys) {
         foreach($keys as $key) {
-            if(!apcu_exists($this->prepare_key($key)) {
+            if(!apcu_exists($this->prepare_key($key))) {
                 return false;
             }
         }
@@ -362,25 +360,48 @@ class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_i
     }
 
     /**
-     * Given the data from the add instance form this function creates a configuration array.
+     * Acquires a lock on the given key for the given identifier.
      *
-     * @param stdClass $data
-     * @return array
+     * @param string $key The key we are locking.
+     * @param string $ownerid The identifier so we can check if we have the lock or if it is someone else.
+     *      The use of this property is entirely optional and implementations can act as they like upon it.
+     * @return bool True if the lock could be acquired, false otherwise.
      */
-    public static function config_get_configuration_array($data) {
-        return array(
-            "instance_id" => $data->instance_id
-        );
+    public function acquire_lock($key, $ownerid) {
+        return apcu_add($this->prepare_lock($key), $ownerid);
     }
 
     /**
-     * Allows the cache store to set its data against the edit form before it is shown to the user.
+     * Test if there is already a lock for the given key and if there is whether it belongs to the calling code.
      *
-     * @param moodleform $editform
-     * @param array $config
+     * @param string $key The key we are locking.
+     * @param string $ownerid The identifier so we can check if we have the lock or if it is someone else.
+     * @return bool True if this code has the lock, false if there is a lock but this code doesn't have it, null if there
+     *      is no lock.
      */
-    public static function config_set_edit_form_data(moodleform $editform, array $config){
-        $editform->set_data($config);
+    public function check_lock_state($key, $ownerid) {
+        $success = false;
+        $owner = apcu_fetch($this->prepare_lock($key), $success);
+        if($success) {
+            return $owner === $ownerid;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * Releases the lock on the given key.
+     *
+     * @param string $key The key we are locking.
+     * @param string $ownerid The identifier so we can check if we have the lock or if it is someone else.
+     *      The use of this property is entirely optional and implementations can act as they like upon it.
+     * @return bool True if the lock has been released, false if there was a problem releasing the lock.
+     */
+    public function release_lock($key, $ownerid) {
+        if($this->check_lock_state($key, $ownerid) !== true) {
+            return false;
+        }
+        return apcu_delete($this->prepare_lock($key));
     }
 
     /**
