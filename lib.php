@@ -15,25 +15,25 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * APC cache store main library.
+ * APCu cache store main library.
  *
- * @package    cachestore_apc
+ * @package    cachestore_apcu
  * @copyright  2012 Sam Hemelryk
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 /**
- * The APC cache store class.
+ * The APCu cache store class.
  *
  * @copyright  2012 Sam Hemelryk
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class cachestore_apc extends cache_store implements cache_is_key_aware {
+class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_is_searchable, cache_is_configurable {
 
     /**
-     * The required version of APC for this extension.
+     * The required version of APCu for this extension.
      */
-    const REQUIRED_VERSION = '3.1.1';
+    const REQUIRED_VERSION = '4.0.8';
 
     /**
      * The name of this store instance.
@@ -49,25 +49,32 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
 
     /**
      * The prefix to use on all keys.
-     * @var null
+     * @var string
      */
     protected $prefix = null;
+    protected $prefix_length = "";
 
     /**
-     * Static method to check that the APC stores requirements have been met.
+     * The prefix for this instance
+     * @var string
+     */
+    protected $instance_id = "";
+
+    /**
+     * Static method to check that the APCu stores requirements have been met.
      *
-     * It checks that the APC extension has been loaded and that it has been enabled.
+     * It checks that the APCu extension has been loaded and that it has been enabled.
      *
      * @return bool True if the stores software/hardware requirements have been met and it can be used. False otherwise.
      */
     public static function are_requirements_met() {
-        if (!extension_loaded('apc') ||    // APC PHP extension is not available.
-            ! ( ini_get('apc.enabled') || ini_get('apcu.enabled') ) // APC is not enabled.
+        if (!extension_loaded('apcu') ||    // APCu PHP extension is not available.
+            ! ( ini_get('apc.enabled') || ini_get('apcu.enabled') ) // APCu is not enabled.
         ) {
             return false;
         }
 
-        $version = phpversion('apc');
+        $version = phpversion('apcu');
         return $version && version_compare($version, self::REQUIRED_VERSION, '>=');
     }
 
@@ -88,7 +95,7 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      * @return int The supported features.
      */
     public static function get_supported_features(array $configuration = array()) {
-        return self::SUPPORTS_DATA_GUARANTEE + self::SUPPORTS_NATIVE_TTL;
+        return self::SUPPORTS_DATA_GUARANTEE + self::SUPPORTS_NATIVE_TTL + self::IS_SEARCHABLE;
     }
 
     /**
@@ -102,28 +109,6 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
     }
 
     /**
-     * Used to control the ability to add an instance of this store through the admin interfaces.
-     *
-     * @return bool True if the user can add an instance, false otherwise.
-     */
-    public static function can_add_instance() {
-        // This method doesn't exist in the API at the time of writing this plugin.
-        if (method_exists('cache_helper', 'count_store_instances')) {
-            $count = cache_helper::count_store_instances('apc');
-        } else {
-            $factory = cache_factory::instance();
-            $config = $factory->create_config_instance();
-            $count = 0;
-            foreach ($config->get_all_stores() as $store) {
-                if ($store['plugin'] === 'apc') {
-                    $count ++;
-                }
-            }
-        }
-        return $count === 0;
-    }
-
-    /**
      * Constructs an instance of the cache store.
      *
      * This method should not create connections or perform and processing, it should be used
@@ -133,6 +118,9 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      */
     public function __construct($name, array $configuration = array()) {
         $this->name = $name;
+        if(isset($configuration['instance_id']) && !empty($configuration['instance_id'])) {
+            $this->instance_id = $configuration['instance_id'];
+        }
     }
 
     /**
@@ -153,7 +141,8 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      */
     public function initialise(cache_definition $definition) {
         $this->definition = $definition;
-        $this->prefix = $definition->generate_definition_hash().'__';
+        $this->prefix = $this->instance_id.'\\'.$definition->get_mode().'\\'.$definition->get_area().'\\'.$definition->get_component().'\\';
+        $this->prefix_length = strlen($this->prefix);
         return true;
     }
 
@@ -163,15 +152,6 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      */
     public function is_initialised() {
         return ($this->definition !== null);
-    }
-
-    /**
-     * Returns true if this cache store instance is ready to use.
-     * @return bool
-     */
-    public function is_ready() {
-        // No set up is actually required, providing apc is installed and enabled.
-        return true;
     }
 
     /**
@@ -192,13 +172,7 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      * @return mixed The data that was associated with the key, or false if the key did not exist.
      */
     public function get($key) {
-        $key = $this->prepare_key($key);
-        $success = false;
-        $outcome = apc_fetch($key, $success);
-        if ($success) {
-            return $outcome;
-        }
-        return $success;
+        return apcu_fetch($this->prepare_key($key));
     }
 
     /**
@@ -216,11 +190,10 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
             $map[$key] = $this->prepare_key($key);
         }
         $outcomes = array();
-        $success = false;
-        $results = apc_fetch($map, $success);
-        foreach ($map as $key => $used) {
-            if ($success && array_key_exists($used, $results) && !empty($results[$used])) {
-                $outcomes[$key] = $results[$used];
+        $results = apcu_fetch($map);
+        foreach ($map as $key => $ckey) {
+            if ($success && isset($results[$ckey]) && !empty($results[$ckey])) {
+                $outcomes[$key] = $results[$ckey];
             } else {
                 $outcomes[$key] = false;
             }
@@ -236,8 +209,7 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      * @return bool True if the operation was a success false otherwise.
      */
     public function set($key, $data) {
-        $key = $this->prepare_key($key);
-        return apc_store($key, $data, $this->definition->get_ttl());
+        return apcu_store($this->prepare_key($key), $data, $this->definition->get_ttl());
     }
 
     /**
@@ -249,12 +221,11 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      *      sent ... if they care that is.
      */
     public function set_many(array $keyvaluearray) {
-        $map = array();
+        $store = array();
         foreach ($keyvaluearray as $pair) {
-            $key = $this->prepare_key($pair['key']);
-            $map[$key] = $pair['value'];
+            $store[$this->prepare_key($pair['key'])] = $pair['value'];
         }
-        $result = apc_store($map, null, $this->definition->get_ttl());
+        $result = apcu_store($store, null, $this->definition->get_ttl());
         return count($map) - count($result);
     }
 
@@ -265,8 +236,7 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      * @return bool Returns true if the operation was a success, false otherwise.
      */
     public function delete($key) {
-        $key = $this->prepare_key($key);
-        return apc_delete($key);
+        return apcu_delete($this->prepare_key($key));
     }
 
     /**
@@ -291,14 +261,14 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      * @return boolean True on success. False otherwise.
      */
     public function purge() {
-        $iterator = new APCIterator('user', '#^' . preg_quote($this->prefix, '#') . '#');
-        return apc_delete($iterator);
+        $iterator = new APCUIterator('#^' . preg_quote($this->prefix, '#') . '#');
+        return apcu_delete($iterator);
     }
 
     /**
      * Performs any necessary clean up when the store instance is being deleted.
      */
-    public function cleanup() {
+    public function instance_deleted() {
         $this->purge();
     }
 
@@ -311,15 +281,15 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      * @return cache_store
      */
     public static function initialise_test_instance(cache_definition $definition) {
-        $testperformance = get_config('cachestore_apc', 'testperformance');
+        $testperformance = get_config('cachestore_apcu', 'testperformance');
         if (empty($testperformance)) {
             return false;
         }
         if (!self::are_requirements_met()) {
             return false;
         }
-        $name = 'APC test';
-        $cache = new cachestore_apc($name);
+        $name = 'APCu test';
+        $cache = new cachestore_apcu($name);
         $cache->initialise($definition);
         return $cache;
     }
@@ -331,7 +301,7 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      * @return bool True if the cache has the requested key, false otherwise.
      */
     public function has($key) {
-        return apc_exists($key);
+        return apcu_exists($this->prepare_key($key));
     }
 
     /**
@@ -341,8 +311,12 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      * @return bool True if the cache has at least one of the given keys
      */
     public function has_any(array $keys) {
-        $result = apc_exists($keys);
-        return count($result) > 0;
+        foreach($keys as $key) {
+            if(apcu_exists($this->prepare_key($key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -352,25 +326,76 @@ class cachestore_apc extends cache_store implements cache_is_key_aware {
      * @return bool True if the cache has all of the given keys, false otherwise.
      */
     public function has_all(array $keys) {
-        $result = apc_exists($keys);
-        return count($result) === count($keys);
+        foreach($keys as $key) {
+            if(!apcu_exists($this->prepare_key($key)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Find all of the keys being used by the cache store
+     *
+     * @return array.
+     */
+    public function find_all() {
+         return $this->find_by_prefix("");
+    }
+
+    /**
+     * Find all of the keys whose keys start with the given prefix
+     *
+     * @param string $prefix
+     * @return array.
+     */
+    public function find_by_prefix($prefix) {
+         $prefix = $this->prepare_key($prefix);
+         $iter = new APCUIterator('#^' . preg_quote($prefix, '#') . '#', APC_ITER_KEY);
+         $result = array();
+         foreach($iter as $key => $junk) {
+             $result[] = substr($key, $this->prefix_length);
+         }
+         return $result;
+    }
+
+    /**
+     * Given the data from the add instance form this function creates a configuration array.
+     *
+     * @param stdClass $data
+     * @return array
+     */
+    public static function config_get_configuration_array($data) {
+        return array(
+            "instance_id" => $data->instance_id
+        );
+    }
+
+    /**
+     * Allows the cache store to set its data against the edit form before it is shown to the user.
+     *
+     * @param moodleform $editform
+     * @param array $config
+     */
+    public static function config_set_edit_form_data(moodleform $editform, array $config){
+        $editform->set_data($config);
     }
 
     /**
      * Generates an instance of the cache store that can be used for testing.
      *
      * @param cache_definition $definition
-     * @return cachestore_apc|false
+     * @return cachestore_apcu|false
      */
     public static function initialise_unit_test_instance(cache_definition $definition) {
         if (!self::are_requirements_met()) {
             return false;
         }
-        if (!defined('TEST_CACHESTORE_APC')) {
+        if (!defined('TEST_CACHESTORE_APCU')) {
             return false;
         }
 
-        $store = new cachestore_apc('Test APC', array());
+        $store = new cachestore_apcu('Test APCu', array());
         if (!$store->is_ready()) {
             return false;
         }
