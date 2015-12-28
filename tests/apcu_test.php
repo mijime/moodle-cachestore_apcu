@@ -15,14 +15,14 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * APC unit tests.
+ * APCu unit tests.
  *
  * If you wish to use these unit tests all you need to do is add the following definition to
  * your config.php file.
  *
  * define('TEST_CACHESTORE_XCACHE', true);
  *
- * @package    cachestore_apc
+ * @package    cachestore_apcu
  * @copyright  2014 Sam Hemelryk
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
@@ -32,34 +32,34 @@ defined('MOODLE_INTERNAL') || die();
 // Include the necessary evils.
 global $CFG;
 require_once($CFG->dirroot.'/cache/tests/fixtures/stores.php');
-require_once($CFG->dirroot.'/cache/stores/apc/lib.php');
+require_once($CFG->dirroot.'/cache/stores/apcu/lib.php');
 
 /**
- * APC unit test class.
+ * APCu unit test class.
  *
- * @package    cachestore_apc
+ * @package    cachestore_apcu
  * @copyright  2014 Sam Hemelryk
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class cachestore_apc_test extends cachestore_tests {
+class cachestore_apcu_test extends cachestore_tests {
     /**
-     * Returns the apc class name
+     * Returns the apcu class name
      * @return string
      */
     protected function get_class_name() {
-        return 'cachestore_apc';
+        return 'cachestore_apcu';
     }
 
     /**
-     * Test purging the apc cache store.
+     * Test purging the apcu cache store.
      */
     public function test_purge() {
-        if (!cachestore_apc::are_requirements_met()) {
-            $this->markTestSkipped('Could not test cachestore_apc. Requirements are not met.');
+        if (!cachestore_apcu::are_requirements_met()) {
+            $this->markTestSkipped('Could not test cachestore_apcu. Requirements are not met.');
         }
 
-        $definition = cache_definition::load_adhoc(cache_store::MODE_APPLICATION, 'cachestore_apc', 'phpunit_test');
-        $instance = cachestore_apc::initialise_unit_test_instance($definition);
+        $definition = cache_definition::load_adhoc(cache_store::MODE_APPLICATION, 'cachestore_apcu', 'phpunit_test');
+        $instance = cachestore_apcu::initialise_unit_test_instance($definition);
 
         // Test a simple purge return.
         $this->assertTrue($instance->purge());
@@ -73,14 +73,14 @@ class cachestore_apc_test extends cachestore_tests {
         // Test purge with custom data.
         $this->assertTrue($instance->set('test', 'monster'));
         $this->assertSame('monster', $instance->get('test'));
-        $this->assertTrue(apc_store('test', 'pirate', 180));
+        $this->assertTrue(apcu_store('test', 'pirate', 180));
         $this->assertSame('monster', $instance->get('test'));
-        $this->assertTrue(apc_exists('test'));
-        $this->assertSame('pirate', apc_fetch('test'));
+        $this->assertTrue(apcu_exists('test'));
+        $this->assertSame('pirate', apcu_fetch('test'));
         // Purge and check that our data is gone but the the custom data is still there.
         $this->assertTrue($instance->purge());
         $this->assertFalse($instance->get('test'));
-        $this->assertTrue(apc_exists('test'));
-        $this->assertSame('pirate', apc_fetch('test'));
+        $this->assertTrue(apcu_exists('test'));
+        $this->assertSame('pirate', apcu_fetch('test'));
     }
 }
