@@ -92,7 +92,7 @@ class cachestore_apcu extends cache_store implements cache_is_key_aware, cache_i
      * @return int The supported features.
      */
     public static function get_supported_features(array $configuration = array()) {
-        return self::SUPPORTS_DATA_GUARANTEE + self::SUPPORTS_NATIVE_TTL + self::IS_SEARCHABLE;
+        return self::SUPPORTS_NATIVE_TTL + self::IS_SEARCHABLE;
     }
 
     /**
